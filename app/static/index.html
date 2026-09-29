@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Day12 Agent</title>
+  <script>
+    document.documentElement.classList.add("js");
+    // Lưới an toàn: JS lỗi hoặc tải chậm thì vẫn hiện chữ sau 3 giây
+    setTimeout(function () { document.documentElement.classList.remove("js"); }, 3000);
+  </script>
+  <meta name="description" content="A production AI agent: API-key auth, sliding-window rate limit, monthly cost guard, Redis state, cloud deployed.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cellipse cx='32' cy='32' rx='30' ry='20' transform='rotate(-12 32 32)' fill='%230b0b0b'/%3E%3Ctext x='32' y='41' text-anchor='middle' font-family='Arial Black,Arial' font-weight='900' font-style='italic' font-size='26' fill='%23fff'%3E12%3C/text%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=JetBrains+Mono:wght@400;500&family=Jost:ital,wght@0,400;0,500;0,700;0,800;0,900;1,900&display=swap">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#ask">Skip to the agent</a>
+
+  <header class="site-header">
+    <a class="logo" href="#top" aria-label="Day12 Agent, back to top">
+      <svg class="logo-mark" viewBox="0 0 64 40" aria-hidden="true">
+        <ellipse cx="31" cy="20" rx="30" ry="17" transform="rotate(-12 31 20)" fill="currentColor"/>
+        <text x="30" y="27.5" text-anchor="middle" font-family="Jost, sans-serif" font-weight="900" font-style="italic" font-size="21" letter-spacing="-1" fill="#fff">12</text>
+      </svg>
+      <span class="logo-word">Agent</span>
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="#ask" data-scramble>Ask</a>
+      <a href="#status" data-scramble>Status</a>
+      <a href="#api" data-scramble>API</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero" aria-label="Day12 Agent">
+      <canvas class="hero-canvas" aria-hidden="true"></canvas>
+      <svg class="hero-fallback" viewBox="-265 -330 640 560" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        <defs>
+          <filter id="goo" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="12"/><feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -10"/></filter>
+          <linearGradient id="sat" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#2a2a2a"/><stop offset="1" stop-color="#b9b9b9"/></linearGradient>
+        </defs>
+        <g filter="url(#goo)" fill="none" stroke="#2b2b2b" stroke-linecap="round">
+          <path d="M-120 -150 L-120 185" stroke-width="92"/>
+          <path d="M-120 -150 L-205 -92" stroke-width="80"/>
+          <path d="M0 -118 L70 -178 L150 -150 L165 -70 L20 168 L200 168" stroke-width="88" stroke-linejoin="round"/>
+        </g>
+        <ellipse cx="255" cy="-255" rx="105" ry="52" transform="rotate(-18 255 -255)" fill="url(#sat)"/>
+        <ellipse cx="282" cy="8" rx="40" ry="31" fill="#3a3a3a"/>
+      </svg>
+
+      <p class="tagline">
+        <span class="tagline-line" data-scramble>We ship a production AI agent</span>
+        <span class="tagline-line" data-scramble>secured, metered &amp; cloud-ready.</span>
+      </p>
+      <a class="scroll-down" href="#ask" data-scramble>Scroll down</a>
+    </section>
+
+    <section class="section" id="ask" aria-labelledby="ask-title">
+      <div class="section-head">
+        <span class="kicker">01</span>
+        <h2 class="section-title" id="ask-title" data-scramble-view>Ask the agent</h2>
+        <p class="lede">Every question passes the API key check, a 60&#8209;second sliding-window rate limit and a monthly budget <em>before</em> the model is called. History lives in Redis, so any instance can pick up the conversation.</p>
+      </div>
+
+      <div class="ask-grid">
+        <form class="ask-form" id="ask-form" novalidate>
+          <div class="field" id="field-key">
+            <label class="field-label" for="api-key">API key <small>X-API-Key</small></label>
+            <input id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="AGENT_API_KEY" aria-describedby="form-msg">
+          </div>
+          <div class="field">
+            <label class="field-label" for="user-id">User <small>X-User-Id</small></label>
+            <input id="user-id" type="text" value="sv-ui" maxlength="64" spellcheck="false" autocomplete="off">
+          </div>
+          <div class="field">
+            <label class="field-label" for="question">Question <small>1–2000 chars · Ctrl+Enter</small></label>
+            <textarea id="question" rows="3" maxlength="2000" placeholder="Docker là gì?"></textarea>
+          </div>
+          <div class="form-row">
+            <label class="remember"><input type="checkbox" id="remember"> Remember key in this tab</label>
+            <button class="btn" type="submit" id="send"><span id="send-label">Send</span> <span aria-hidden="true">→</span></button>
+          </div>
+          <p class="form-msg" id="form-msg" role="status" aria-live="polite"></p>
+        </form>
+
+        <div class="convo">
+          <div class="meters">
+            <div class="meter"><span class="meter-label">History</span><span class="meter-val" id="m-history">—</span></div>
+            <div class="meter"><span class="meter-label">Session cost</span><span class="meter-val" id="m-cost">$0</span></div>
+            <div class="meter"><span class="meter-label">Tokens in/out</span><span class="meter-val" id="m-tokens">—</span></div>
+          </div>
+          <div class="window">
+            <div class="window-head"><span>Sliding window · <span id="win-user">sv-ui</span> · last 60 s</span><span id="win-count">0 allowed</span></div>
+            <div class="window-track" id="win-track" aria-hidden="true"></div>
+            <div class="window-scale" aria-hidden="true"><span>−60 s</span><span>−30 s</span><span>now</span></div>
+          </div>
+          <ol class="thread" id="thread" aria-live="polite" aria-label="Conversation">
+            <li class="thread-empty">No messages yet. Paste the key, ask something, then ask again: the history count grows because it is read back from Redis.</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="status" aria-labelledby="status-title">
+      <div class="section-head">
+        <span class="kicker">02</span>
+        <h2 class="section-title" id="status-title" data-scramble-view>Status</h2>
+        <p class="lede"><code>/health</code> answers “is the process alive?” and never touches Redis. <code>/ready</code> answers “can it take traffic?” and pings Redis. Both are polled every 5 seconds from this page.</p>
+      </div>
+
+      <div class="probe-grid">
+        <article class="probe" id="probe-health" data-ok="unknown">
+          <div class="probe-head"><span class="probe-path">GET /health</span><span class="probe-kind">Liveness</span></div>
+          <p class="probe-state" data-state>…</p>
+          <dl class="probe-meta">
+            <div><dt>HTTP</dt><dd data-code>—</dd></div>
+            <div><dt>Latency</dt><dd data-latency>—</dd></div>
+            <div><dt>Detail</dt><dd data-detail>—</dd></div>
+          </dl>
+          <div class="bars" data-bars aria-hidden="true"></div>
+        </article>
+        <article class="probe" id="probe-ready" data-ok="unknown">
+          <div class="probe-head"><span class="probe-path">GET /ready</span><span class="probe-kind">Readiness</span></div>
+          <p class="probe-state" data-state>…</p>
+          <dl class="probe-meta">
+            <div><dt>HTTP</dt><dd data-code>—</dd></div>
+            <div><dt>Latency</dt><dd data-latency>—</dd></div>
+            <div><dt>Detail</dt><dd data-detail>—</dd></div>
+          </dl>
+          <div class="bars" data-bars aria-hidden="true"></div>
+        </article>
+      </div>
+      <p class="probe-foot">Last check <span id="last-check">—</span> · <button class="link-btn" type="button" id="check-now">Check now</button></p>
+    </section>
+
+    <section class="section" id="api" aria-labelledby="api-title">
+      <div class="section-head">
+        <span class="kicker">03</span>
+        <h2 class="section-title" id="api-title" data-scramble-view>API</h2>
+        <p class="lede">Three endpoints. Configuration comes from environment variables only; the key is never stored in the image or the repository.</p>
+      </div>
+
+      <div class="endpoints">
+        <div class="ep">
+          <span class="ep-method">GET</span><span class="ep-path">/health</span>
+          <span class="ep-desc">Liveness. No dependencies. <code>503</code> while shutting down after SIGTERM.</span>
+          <span class="ep-codes">200 · 503</span>
+        </div>
+        <div class="ep">
+          <span class="ep-method">GET</span><span class="ep-path">/ready</span>
+          <span class="ep-desc">Readiness. Pings Redis; the load balancer stops routing here on <code>503</code>.</span>
+          <span class="ep-codes">200 · 503</span>
+        </div>
+        <div class="ep">
+          <span class="ep-method">POST</span><span class="ep-path">/ask</span>
+          <span class="ep-desc">Headers <code>X-API-Key</code>, optional <code>X-User-Id</code>. Body <code>{"question": "…"}</code>.</span>
+          <span class="ep-codes">200 · 401 · 402 · 422 · 429</span>
+        </div>
+      </div>
+
+      <div class="code-block">
+        <div class="code-head"><span>curl</span><button class="link-btn" type="button" id="copy-curl">Copy</button></div>
+        <pre><code id="curl"></code></pre>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p class="footer-word" aria-hidden="true">Agent/12</p>
+    <div class="footer-row">
+      <span>Day 12 · Cloud services &amp; deployment</span>
+      <span>Nguyễn Đức Tâm · 2A202602921</span>
+      <span><span id="svc-version">day12-agent</span> · <a href="/docs">OpenAPI</a> · <a href="https://github.com/tamnd2004/K4-L3B-DAY12-NguyenDucTam-2A202602921-CloudServicesAndDeployment" rel="noopener">GitHub</a></span>
+    </div>
+  </footer>
+
+  <script src="/static/hero.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>
