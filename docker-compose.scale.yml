@@ -1,0 +1,33 @@
+# ═══════════════════════════════════════════════════════════════════
+# CP4 — Scale ngang: nhiều instance agent phía sau 1 load balancer (nginx)
+#
+# docker-compose.yml map cố định "8000:8000" cho agent (yêu cầu CP2). Một cổng
+# trên máy chỉ gán được cho MỘT container, nên `--scale agent=3` với riêng file
+# đó sẽ lỗi "port is already allocated". File này ghép đè lên file gốc:
+#   - bỏ port mapping của agent: các instance chỉ nhận request trong mạng compose
+#   - thêm nginx giữ cổng 8000, chia request round-robin (nginx/nginx.conf)
+#
+# Chạy:
+#   docker compose -f docker-compose.yml -f docker-compose.scale.yml up -d --build --scale agent=3
+#   docker compose -f docker-compose.yml -f docker-compose.scale.yml ps
+# Quay về 1 instance:
+#   docker compose -f docker-compose.yml -f docker-compose.scale.yml down
+#   docker compose up -d
+#
+# `!reset` cần Docker Compose ≥ 2.24.
+# ═══════════════════════════════════════════════════════════════════
+
+services:
+  agent:
+    ports: !reset []
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "8000:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      # nginx phân giải `agent` lúc khởi động → đợi đủ instance healthy rồi mới chạy
+      agent:
+        condition: service_healthy
