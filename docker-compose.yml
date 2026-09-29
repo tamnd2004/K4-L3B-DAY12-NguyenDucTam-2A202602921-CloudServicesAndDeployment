@@ -16,7 +16,7 @@
 #
 # MỞ RỘNG TÙY CHỌN: thêm service `nginx` làm load balancer
 # (không phải bonus chấm điểm riêng; nginx/nginx.conf đã có sẵn)
-#     docker compose up --scale agent=3
+#     → xem docker-compose.scale.yml (nginx giữ cổng 8000, agent × 3 phía sau)
 #
 # Kiểm tra: pytest tests/test_cp2.py -v
 # ═══════════════════════════════════════════════════════════════════
@@ -35,10 +35,30 @@ services:
       timeout: 3s
       retries: 5
 
-  # TODO (CP2): khai báo service `agent` ở đây
-  # agent:
-  #   build: .
-  #   ...
+  agent:
+    build: .
+    ports:
+      # Cổng cố định chỉ gán được cho 1 container → scale dùng docker-compose.scale.yml
+      - "8000:8000"
+    environment:
+      # Nội suy từ .env cạnh file này — thiếu thì compose dừng ngay (fail fast)
+      AGENT_API_KEY: "${AGENT_API_KEY:?AGENT_API_KEY is required - set it in .env}"
+      # `redis` là tên service = hostname trong mạng compose (KHÔNG phải localhost)
+      REDIS_URL: redis://redis:6379/0
+      PORT: "8000"
+      RATE_LIMIT_PER_MINUTE: "${RATE_LIMIT_PER_MINUTE:-10}"
+      MONTHLY_BUDGET_USD: "${MONTHLY_BUDGET_USD:-10.0}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
 
 volumes:
   redis-data:
